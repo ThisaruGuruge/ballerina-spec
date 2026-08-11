@@ -15,9 +15,9 @@
 
 ## Summary
 
-The Ballerina GraphQL package (`ballerina/graphql`, v1.18.0 at the time of writing) exposes a code-first GraphQL server and an HTTP GraphQL client, implemented against the October 2021 edition of the GraphQL specification against a current [September 2025 edition](https://spec.graphql.org/September2025/); this proposal closes part of that gap without claiming full alignment. Its service-side programming model maps the three GraphQL operation types onto three structurally different Ballerina constructs — a `query` field is a `resource function get`, a `mutation` field is a `remote function`, and a `subscription` field is a `resource function subscribe` — an asymmetry that is the single most frequent source of confusion for users approaching the package from a GraphQL background.
+The Ballerina GraphQL package (`ballerina/graphql`, v1.18.0 at the time of writing) implemented against the October 2021 edition of the GraphQL specification. The current GraphQL specificcation; [September 2025 edition](https://spec.graphql.org/September2025/); introduces some gaps between the current implementation and the specification. This proposal closes part of that gap without claiming full alignment. The current service-side programming model maps the three GraphQL operation types onto three structurally different Ballerina constructs — a `query` field is a `resource function get`, a `mutation` field is a `remote function`, and a `subscription` field is a `resource function subscribe` — an asymmetry that is the single most frequent source of confusion for users approaching the package from a GraphQL background.
 
-This proposal unifies the resolver model onto a single construct, the resource method, naming the operation type explicitly by the accessor (`query`, `mutate`, and unchanged `subscribe`) instead of the current `get`/`remote function`/`subscribe`. The one decision this proposal does not make for itself is how `get` and `remote` are retired: two materially different approaches — a major-version break that removes them outright, and a dual-syntax deprecation window that keeps them working, deprecated, alongside the new forms — are both developed in full and compared unbiased in [§1.4](#14-comparison-the-decision-this-proposal-does-not-make), with the choice left to the reviewers. Everything else in this proposal, including the accessor names themselves, a diagnostic-code convention overhaul, and a compile-time-resolved runtime dispatch table, is independent of which approach is chosen.
+This proposal unifies the resolver model onto a single construct, the resource method, naming the operation type explicitly by the accessor (`query`, `mutate`, and unchanged `subscribe`) instead of the current `get`/`remote function`/`subscribe`. The one decision this proposal does not make for itself is how `get` and `remote` are retired: two materially different approaches — a major-version break that removes them outright, and a dual-syntax deprecation window that keeps them working, deprecated, alongside the new forms — are both developed in full and compared unbiased in [§1.4](#14-comparison-the-decision-this-proposal-does-not-make), although I am more biased towards the major version change (but keep the release on hold for a new Ballerina Platform update. Everything else in this proposal, including the accessor names themselves, a diagnostic-code convention overhaul, and a compile-time-resolved runtime dispatch table, is independent of which approach is chosen.
 
 Alongside the resolver model, this proposal sets direction for Federation v2 parity — committing only to engine-native `_entities`/`_service` resolution and deferring the directive set, `FieldSet` validation, and composition work to a dedicated child BEP — streamlines the data loader API, implements the `@oneOf` and argument/input-field `@deprecated` directives ratified in the September 2025 edition, and adds an opt-in schema-aware validation tier to the client introduced by [BEP 1460](https://github.com/ballerina-platform/ballerina-spec/issues/1460). A structural gap — the package's inability to let a user declare custom `Query`/`Mutation`/`Subscription` root type names — is noted but deliberately not solved here; see [Non-Goals](#non-goals) and [Future Work](#future-work).
 
@@ -47,32 +47,32 @@ service on new graphql:Listener(9090) {
 }
 ```
 
-Nothing in `resource function get greeting` says "query", and nothing in `remote function updateName` says "mutation". The mapping is learned, not read.
+Nothing in `resource function get greeting` says "query", and nothing in `remote function updateName` says "mutation". Developers have to learn the mapping, since it is unintuitive.
 
-The original justifications for these choices do not survive scrutiny — though it's worth noting the team's own instinct already moved toward `query`/`mutation`/`subscription` accessors back in 2021, before a different design opinion favoring `remote` for mutations carried the day; see [ballerina-library discussion #757](https://github.com/ballerina-platform/ballerina-library/discussions/757).
+> **Note:** It's worth noting the following [ballerina-library discussion #757](https://github.com/ballerina-platform/ballerina-library/discussions/757).
 
-- **`get` for queries** was chosen by analogy with the HTTP `GET` method, on the grounds that a GraphQL query is a read operation. HTTP methods are orthogonal to GraphQL operation types. The GraphQL over HTTP specification requires servers to accept `POST` for _all_ operation types and makes `GET` support optional ([GraphQL over HTTP, draft](https://graphql.github.io/graphql-over-http/draft/)); the Ballerina listener itself accepts both. A `query` field is therefore served over `POST` in the common case, while being declared with the `get` accessor — the analogy is not merely weak, it is inverted.
+- **`get` for queries** was chosen by analogy with the HTTP `GET` method, on the grounds that a GraphQL query is a read operation. HTTP methods are orthogonal to GraphQL operation types. The GraphQL over HTTP specification requires servers to accept `POST` for _all_ operation types and makes `GET` support optional ([GraphQL over HTTP, draft](https://graphql.github.io/graphql-over-http/draft/)); the Ballerina GraphQL listener itself accepts both. A `query` field is therefore served over `POST` in the common case, while being declared with the `get` accessor, which breaks the analogy anyway.
 - **`remote` for mutations** was chosen on the grounds that mutating data is characteristically a remote interaction (a database write, a call to another service). This conflates the field's _semantics_ with its _implementation_: an in-memory mutation is still a `mutation` field, and a `query` field that hits a database is still a query. The construct also leaks an implementation detail into the schema-facing declaration, which is precisely the thing the code-first model is supposed to hide.
 
 The asymmetry has concrete, measurable costs beyond readability:
 
-- **`graphql:Upload` is only permitted in `remote` methods** (diagnostic `GRAPHQL_119` rejects it in resource methods). The restriction the package actually wants to express is "file upload is only meaningful on a mutation", but because mutations are the only remote methods, the rule is written against the wrong axis. A user reading the diagnostic learns nothing about mutations.
-- **Interceptors are declared with a `remote function execute`** (`graphql:Interceptor`), so `remote` means two unrelated things inside the same package.
+- **`graphql:Upload` is only permitted in `remote` methods** (diagnostic `GRAPHQL_119` rejects it in resource methods). The restriction the package actually wants to express is "file upload is only meaningful on a mutation", but because mutations are the only remote methods, the rule is written against the wrong axis. This is a symptom of having different constructs.
+- **Interceptors are declared with a `remote function execute`** (`graphql:Interceptor`), so `remote function` means two unrelated things inside the same package.
 - The package must maintain two parallel dispatch paths in the runtime — `getResourceMethod(...)` keyed by accessor and `getRemoteMethod(...)` keyed by name — and two parallel validation paths in the compiler plugin, for what is one concept.
 
 ### No comparable library borrows HTTP vocabulary
 
-Every widely-used GraphQL server library names the operation type explicitly, and none reuses HTTP
-method names:
+Every widely-used GraphQL server library names the operation type explicitly, and none reuses HTTP method names:
 
-| Library                        | Query                           | Mutation                           | Subscription                |
-| ------------------------------ | ------------------------------- | ---------------------------------- | --------------------------- |
-| Apollo Server / graphql-js     | `Query` key in the resolver map | `Mutation` key                     | `Subscription` key          |
-| HotChocolate (.NET)            | `[QueryType]` / `Query` type    | `[MutationType]` / `Mutation` type | `[SubscriptionType]`        |
-| Spring for GraphQL             | `@QueryMapping`                 | `@MutationMapping`                 | `@SubscriptionMapping`      |
-| gqlgen (Go)                    | `QueryResolver`                 | `MutationResolver`                 | `SubscriptionResolver`      |
-| graphql-go/graphql             | object named `Query`            | object named `Mutation`            | object named `Subscription` |
-| Strawberry / Graphene (Python) | `Query` class                   | `Mutation` class                   | `Subscription` class        |
+| Library                        | Query                           | Mutation                           | Subscription                  |
+| ------------------------------ | ------------------------------- | ---------------------------------- | ----------------------------- |
+| Apollo Server / graphql-js     | `Query` key in the resolver map | `Mutation` key                     | `Subscription` key            |
+| HotChocolate (.NET)            | `[QueryType]` / `Query` type    | `[MutationType]` / `Mutation` type | `[SubscriptionType]`          |
+| Spring for GraphQL             | `@QueryMapping`                 | `@MutationMapping`                 | `@SubscriptionMapping`        |
+| gqlgen (Go)                    | `QueryResolver`                 | `MutationResolver`                 | `SubscriptionResolver`        |
+| graphql-go/graphql             | object named `Query`            | object named `Mutation`            | object named `Subscription`   |
+| Strawberry / Graphene (Python) | `Query` class                   | `Mutation` class                   | `Subscription` class          |
+| Ballerina                      | `resource function get`         | `remote function`                  | `resource function subscribe` |
 
 Spring for GraphQL is the closest precedent: `@QueryMapping`, `@MutationMapping`, and `@SubscriptionMapping` are all meta-annotations over the same underlying `@SchemaMapping`, differing only in the preset `typeName` ([Spring for GraphQL — Annotated Controllers](https://docs.spring.io/spring-graphql/reference/controllers.html)). That is structurally identical to what this proposal does with resource accessors: one construct, three values, operation type named at the declaration site.
 
