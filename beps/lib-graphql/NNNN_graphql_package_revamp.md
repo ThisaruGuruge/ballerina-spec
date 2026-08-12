@@ -422,7 +422,7 @@ Each area gets a full `01`–`99` sequence per severity — 100 codes per area p
 | `GRAPHQL_127` | `GRAPHQL_1901` | `SCHEMA_GENERATION_FAILED` |
 
 This accounts for all 58 current codes plus every new one this proposal introduces (13, of which 2 are mutually exclusive by approach). The `WARNING_209`/`WARNING_210` naming bug is fixed as a side effect — every constant in the regenerated `DiagnosticCode` enum follows the same `GRAPHQL_nnnn` pattern.
-</summary>
+</details>
 
 ### 1. Unified resolver model
 
