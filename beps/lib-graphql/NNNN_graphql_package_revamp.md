@@ -312,10 +312,12 @@ Each area gets a full `01`–`99` sequence per severity — 100 codes per area p
 
 #### 0.3 Full mapping
 
-<details>
-<summary>Every code below is **proposed, not frozen** — final numbers are confirmed during implementation against whatever else has landed in the package by then.</summary>
+Every code below is **proposed, not frozen** — final numbers are confirmed during implementation against whatever else has landed in the package by then.
 
-**Area 0 — Core service & resolver structure**
+<details>
+<summary>See detailed error code examples:</summary>
+
+##### Area 0 — Core service & resolver structure
 
 | Current       | New            | Name                                                                                                                                            |
 | ------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -335,7 +337,7 @@ Each area gets a full `01`–`99` sequence per severity — 100 codes per area p
 | —             | `GRAPHQL_2001` | **New, Approach B only**: `DEPRECATED_REMOTE_METHOD` (warning)                                                                                  |
 | —             | `GRAPHQL_2002` | **New, Approach B only**: `DEPRECATED_GET_ACCESSOR` (warning, two message variants — see [§1.3](#13-approach-b-dual-syntax-deprecation-window)) |
 
-**Area 1 — Type system**
+##### Area 1 — Type system
 
 | Current                                          | New            | Name                                                                                                                      |
 | ------------------------------------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------- |
@@ -369,7 +371,7 @@ Each area gets a full `01`–`99` sequence per severity — 100 codes per area p
 | `GRAPHQL_209` (currently misnamed `WARNING_209`) | `GRAPHQL_2105` | `UNABLE_TO_VALIDATE_DEFAULT_VALUES_OF_INPUT_FIELD`                                                                        |
 | `GRAPHQL_210` (currently misnamed `WARNING_210`) | `GRAPHQL_2106` | `UNABLE_TO_VALIDATE_DEFAULT_VALUES_OF_INPUT_OBJECT`                                                                       |
 
-**Area 2 — Federation / subgraph**
+##### Area 2 — Federation / subgraph
 
 | Current       | New            | Name                                                                                                                                   |
 | ------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -382,9 +384,9 @@ Each area gets a full `01`–`99` sequence per severity — 100 codes per area p
 | `GRAPHQL_203` | `GRAPHQL_2201` | `PROVIDE_KEY_VALUE_PAIR_FOR_ENTITY_ANNOTATION`                                                                                         |
 | `GRAPHQL_204` | `GRAPHQL_2202` | `PROVIDE_A_STRING_LITERAL_OR_AN_ARRAY_OF_STRING_LITERALS_FOR_KEY_FIELD`                                                                |
 
-`GRAPHQL_1207`+ and `GRAPHQL_2203`+ are reserved for the federation child BEP.
+> **Note:** `GRAPHQL_1207`+ and `GRAPHQL_2203`+ are reserved for the federation child BEP.
 
-**Area 3 — Data loader / prefetch**
+##### Area 3 — Data loader / prefetch
 
 | Current       | New            | Name                                                                                                                                             |
 | ------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -396,14 +398,14 @@ Each area gets a full `01`–`99` sequence per severity — 100 codes per area p
 | —             | `GRAPHQL_1306` | **New**: `UNDECLARED_DATA_LOADER` (was informally sketched as "`GRAPHQL_150`" in an earlier draft) — [§3.3](#33-declarative-loader-registration) |
 | `GRAPHQL_202` | `GRAPHQL_2301` | `UNABLE_TO_VALIDATE_PREFETCH_METHOD`                                                                                                             |
 
-**Area 4 — Interceptors**
+##### Area 4 — Interceptors
 
 | Current       | New            | Name                                       |
 | ------------- | -------------- | ------------------------------------------ |
 | `GRAPHQL_128` | `GRAPHQL_1401` | `RESOURCE_METHOD_INSIDE_INTERCEPTOR`       |
 | `GRAPHQL_129` | `GRAPHQL_1402` | `INVALID_REMOTE_METHOD_INSIDE_INTERCEPTOR` |
 
-**Area 6 — Directives & spec-edition extensions**
+##### Area 6 — Directives & spec-edition extensions
 
 | Current       | New            | Name                                                                                                                                                    |
 | ------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -411,7 +413,7 @@ Each area gets a full `01`–`99` sequence per severity — 100 codes per area p
 | —             | `GRAPHQL_1601` | **New**: `INVALID_ONEOF_FIELD` ([§4.1](#41-oneof))                                                                                                      |
 | —             | `GRAPHQL_1602` | **New**: `INVALID_REQUIRED_DEPRECATED_INPUT` ([§4.2](#42-deprecated-on-arguments-and-input-fields))                                                     |
 
-**Area 9 — General**
+##### Area 9 — General
 
 | Current       | New            | Name                       |
 | ------------- | -------------- | -------------------------- |
@@ -454,7 +456,7 @@ service on new graphql:Listener(9090) {
 
 Accessors are verbs in Ballerina by convention (`get`, `post`, `put` in `ballerina/http`), and a resource accessor is grammatically an _identifier_ — `resource-method-name := identifier` ([Ballerina language specification, Resources](https://ballerina.io/spec/lang/master/#resources_defn)) — so all three names are legal without any language change. GraphQL engine uses its own runtime resource-method lookup, validated entirely by its compiler plugin.
 
-`resource function mutate updateName` reads, on first encounter, like it says "mutate updateName" as an instruction rather than naming an operation. The resolution: the accessor describes **what the client does**, not what the method does — a client _queries_ `greeting`, _mutates_ via `updateName`, and _subscribes_ to `updates`, exactly the pattern the already-shipped `resource function subscribe updates` establishes. Alternatives considered — including the noun `mutation` — are in [Alternatives](#mutation-as-the-accessor-instead-of-mutate).
+`resource function mutate updateName` reads, on first encounter, like it says "mutate updateName" as an instruction rather than naming an operation (This was also a reason to use `remote` functions for mutations). The resolution: the accessor describes **what the client does**, not what the method does — a client _queries_ `greeting`, _mutates_ via `updateName`, and _subscribes_ to `updates`, exactly the pattern the already-shipped `resource function subscribe updates` establishes. Alternatives considered — including the noun `mutation` — are in [Alternatives](#mutation-as-the-accessor-instead-of-mutate).
 
 Nested object fields (`service class`, `distinct service object`) use `query`:
 
