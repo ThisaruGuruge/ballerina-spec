@@ -644,8 +644,8 @@ Independent of §3.3, the `DataLoader` object type gains operations every compar
 public type DataLoader isolated object {
     public isolated function add(anydata key);
     public isolated function addMany(anydata[] keys);                                   // new
-    public isolated function get(anydata key, typedesc<anydata> valueType = <>) returns 'type|error;
-    public isolated function getMany(anydata[] keys, typedesc<anydata> valueType = <>) returns 'type[]|error;  // new
+    public isolated function get(anydata key, typedesc<anydata> valueType = <>) returns valueType|error;
+    public isolated function getMany(anydata[] keys, typedesc<anydata> valueType = <>) returns valueType[]|error;  // new
     public isolated function prime(anydata key, anydata value);                         // new
     public isolated function clear(anydata key);                                        // new
     public isolated function dispatch();
