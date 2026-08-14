@@ -699,12 +699,57 @@ input ProductLookup @oneOf {
 }
 ```
 
-Enforcement is split between compile time and coercion time:
+Enforcement is split between compile time and request time, and the request-time check completes **before the engine resolves any field**, not only when the `@oneOf` argument's own field would have been resolved:
 
 - **Compile time** (`GRAPHQL_1601`, `INVALID_ONEOF_FIELD`) — every field of a `@graphql:OneOf` record must be optional and nilable, and must not carry a default value. Violations are compile errors.
-- **Coercion time** — the engine rejects a `ProductLookup` argument that supplies zero fields, more than one field, or exactly one field with an explicit `null` value, with the error the specification prescribes in each case.
+- **Request time** — a `@oneOf` argument supplied as a literal in the document is checked during document validation, alongside the existing field/variable/directive/fragment validation, so it runs before execution starts; one supplied through a variable is checked during variable coercion, which the specification likewise requires to complete before execution starts. Either path rejects an argument that supplies zero fields, more than one field, or exactly one field with an explicit `null` value, with the error the specification prescribes in each case — and because both checks run before execution, a malformed `@oneOf` argument anywhere in the document fails the whole request up front, so no field is ever partially resolved first.
 
 This also gives Ballerina a usable input-union idiom for the first time. The existing restriction that input unions may only be `T|()` (`GRAPHQL_1115`) is unchanged; `@graphql:OneOf` is the supported way to express "one of several inputs". The specification's note on input unions is updated to point at `@oneOf`.
+
+A `@oneOf` field's type is not limited to scalars — it can be any valid GraphQL input type, including another input object, exactly as the [September 2025 edition of the GraphQL specification](https://spec.graphql.org/September2025/)'s own example does:
+
+```ballerina
+public type OrganizationAndEmailInput record {|
+    string organizationId;
+    string email;
+|};
+
+@graphql:OneOf
+public type UserUniqueCondition record {|
+    @graphql:ID string? id?;
+    string? username?;
+    OrganizationAndEmailInput? organizationAndEmail?;
+|};
+
+service on new graphql:Listener(9090) {
+    resource function query user(UserUniqueCondition condition) returns User? {
+        string? id = condition.id;
+        string? username = condition.username;
+        OrganizationAndEmailInput? organizationAndEmail = condition.organizationAndEmail;
+
+        if id is string {
+            return getUserById(id);
+        } else if username is string {
+            return getUserByUsername(username);
+        } else if organizationAndEmail is OrganizationAndEmailInput {
+            return getUserByOrgAndEmail(organizationAndEmail);
+        }
+        return ();
+    }
+}
+```
+
+which generates:
+
+```graphql
+input UserUniqueCondition @oneOf {
+    id: ID
+    username: String
+    organizationAndEmail: OrganizationAndEmailInput
+}
+```
+
+`OrganizationAndEmailInput` is an ordinary input type — it does not itself carry `@graphql:OneOf` — and, like every other field on a `@oneOf` record, it is only compile-time-valid here because it is optional and nilable (`OrganizationAndEmailInput?`, not `OrganizationAndEmailInput`). The same `GRAPHQL_1601` check and coercion-time rule from above apply uniformly regardless of whether a given field's type is a scalar or an input object.
 
 #### 4.2 `@deprecated` on arguments and input fields
 
@@ -795,7 +840,7 @@ sequenceDiagram
     else level = SCHEMA
         C->>P: parse(document)
         C->>V: validate(DocumentNode, schema)
-        Note over V: unknown fields, unknown arguments,<br/>argument types, variable usage,<br/>fragment type conditions
+        Note over V: unknown fields, unknown arguments,<br/>argument types, variable usage,<br/>fragment type conditions, oneOf constraints
         V-->>C: ErrorDetail[]?
         C->>S: HTTP POST
     end
@@ -806,10 +851,10 @@ sequenceDiagram
 Design notes:
 
 - `SYNTAX` is the default, so the behaviour BEP 1460 specifies is what a user gets without configuration. `NONE` exists as an escape hatch for a client talking to a service that uses schema extensions the packaged validator does not model.
-- `SCHEMA` reuses the listener's existing field, variable, directive, and fragment validator visitors against a `__Schema` value built from the configured SDL. The validation logic is therefore shared, not duplicated.
+- `SCHEMA` reuses the listener's existing field, variable, directive, and fragment validator visitors — including the `@oneOf` check from [§4.1](#41-oneof) — against a `__Schema` value built from the configured SDL. The validation logic is therefore shared, not duplicated: a literal `@oneOf` argument that supplies zero fields, more than one field, or an explicit `null` is rejected here too, without a network call, by the same rule the listener applies.
 - Validation failures return `graphql:InvalidDocumentError` carrying the `ErrorDetail[]`, in the same shape the server would have returned.
 
-> **Implementation dependency.** The package contains an SDL _generator_ but **no SDL parser**. `SCHEMA`-level validation requires one. This is the largest single new component in this proposal and is why the tier is opt-in rather than the default. An SDL parser is independently valuable: it is also the prerequisite for schema-first service generation in the `bal graphql` tool and for federation composition checks.
+> **Implementation dependency.** The package contains an SDL _generator_ but **no SDL parser**. `SCHEMA`-level validation requires one, and it must carry the `@oneOf` directive on an input object type definition through into the `__Schema` value it builds, since the generator now emits it (§4.1) — the same way it must carry through every other directive it round-trips. `graphql.parser`, which parses the *document* (not the SDL), needs no change for this: `@oneOf` adds a validation rule over argument-value syntax that parser already parses (object literals), not new document syntax. This is the largest single new component in this proposal and is why the tier is opt-in rather than the default. An SDL parser is independently valuable: it is also the prerequisite for schema-first service generation in the `bal graphql` tool and for federation composition checks.
 
 The `schema` field is a plain string so that it can be supplied from a compile-time constant, read from an SDL file at initialisation, or provided by generated code.
 
@@ -1057,7 +1102,7 @@ This proposal needs the following categories of coverage, independent of which r
 - **Federation.** The one committed item — engine-native `_entities`/`_service` — needs parity tests against today's source-injected behaviour, including every error path and its exact message text. Everything else is deferred to the child BEP.
 - **Data loader.** Declarative registration (including the `contextInit`-wins collision case), the new convenience operations, and `getDataLoader`'s panic-to-error change all need dedicated coverage; if the single-phase `load()` spike succeeds, so does its concurrency and deadlock behaviour.
 - **Directives and input types.** `@oneOf` needs schema-output, compile-error, and coercion-error coverage (zero, two, and exactly-one-with-explicit-null field cases, plus introspection); argument/input-field `@deprecated` needs schema-output coverage and the new required-input compile error.
-- **Client.** Each validation level (`NONE`/`SYNTAX`/`SCHEMA`) must behave as specified, with `SCHEMA` failing without a network call and producing the same `ErrorDetail[]` shape the listener would for the same document and schema; the new SDL parser needs a round-trip suite against everything the existing generator can emit.
+- **Client.** Each validation level (`NONE`/`SYNTAX`/`SCHEMA`) must behave as specified, with `SCHEMA` failing without a network call and producing the same `ErrorDetail[]` shape the listener would for the same document and schema — including a malformed literal `@oneOf` argument; the new SDL parser needs a round-trip suite against everything the existing generator can emit, `@oneOf` included.
 - **Migration tool (Approach A only).** Its own coverage, distinct from the resolver-model fixtures above: corpus coverage against the existing fixture set, hierarchical-path sites flagged rather than silently rewritten, idempotency on already-migrated input, and correct handling of partially-migrated input.
 
 ## Risks and Assumptions
